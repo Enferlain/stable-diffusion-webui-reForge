@@ -119,9 +119,15 @@ def run(command, desc=None, errdesc=None, custom_env=None, live: bool = default_
             f"Error code: {result.returncode}",
         ]
         if result.stdout:
-            error_bits.append(f"stdout: {result.stdout}")
+            try:
+                error_bits.append(f"stdout: {result.stdout}")
+            except UnicodeEncodeError:
+                error_bits.append(f"stdout: <Unicode encoding error - output suppressed>")
         if result.stderr:
-            error_bits.append(f"stderr: {result.stderr}")
+            try:
+                error_bits.append(f"stderr: {result.stderr}")
+            except UnicodeEncodeError:
+                error_bits.append(f"stderr: <Unicode encoding error - output suppressed>")
         raise RuntimeError("\n".join(error_bits))
 
     return (result.stdout or "")
@@ -156,7 +162,11 @@ def run_pip(command, desc=None, live=default_command_live):
         # Check if uv is available
         try:
             subprocess.run(["uv", "--version"], check=True, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
-            return run(f'uv pip install {command} --python "{python}"{index_url_line}', desc=f"Installing {desc}", errdesc=f"Couldn't install {desc}", live=live)
+            # Remove duplicate 'install' from command if present
+            clean_command = command
+            if command.startswith('install '):
+                clean_command = command[8:]  # Remove 'install ' prefix
+            return run(f'uv pip install {clean_command} --python "{python}"{index_url_line}', desc=f"Installing {desc}", errdesc=f"Couldn't install {desc}", live=live)
         except (subprocess.CalledProcessError, FileNotFoundError):
             # Fallback to pip if uv is not available
             print("uv is not available, falling back to pip")
@@ -271,7 +281,10 @@ def run_extension_installer(extension_dir):
         if stdout:
             print(stdout)
     except Exception as e:
-        errors.report(str(e))
+        try:
+            errors.report(str(e))
+        except UnicodeEncodeError:
+            errors.report("An error occurred during extension installation (Unicode encoding error)")
 
 
 def list_extensions(settings_file):
@@ -386,7 +399,9 @@ def requirements_met(requirements_file):
 
 def prepare_environment():
     torch_index_url = os.environ.get('TORCH_INDEX_URL', "https://download.pytorch.org/whl/cu128")
-    torch_command = os.environ.get('TORCH_COMMAND', f"pip install torch==2.7.1 torchvision --extra-index-url {torch_index_url}")
+    # Explicitly default to cu128 versions - users can override via environment variables
+    torch_command = os.environ.get('TORCH_COMMAND', f"pip install torch==2.7.1+cu128 torchvision==0.22.1+cu128 --extra-index-url {torch_index_url}")
+    
     if args.use_ipex:
         if platform.system() == "Windows":
             # The "Nuullll/intel-extension-for-pytorch" wheels were built from IPEX source for Intel Arc GPU: https://github.com/intel/intel-extension-for-pytorch/tree/xpu-main
@@ -407,6 +422,7 @@ def prepare_environment():
             # See https://intel.github.io/intel-extension-for-pytorch/index.html#installation for details.
             torch_index_url = os.environ.get('TORCH_INDEX_URL', "https://pytorch-extension.intel.com/release-whl/stable/xpu/us/")
             torch_command = os.environ.get('TORCH_COMMAND', f"pip install torch==2.0.0a0 intel-extension-for-pytorch==2.0.110+gitba7f6c1 --extra-index-url {torch_index_url}")
+    
     requirements_file = os.environ.get('REQS_FILE', "requirements_versions.txt")
     requirements_file_for_npu = os.environ.get('REQS_FILE_FOR_NPU', "requirements_npu.txt")
 
@@ -432,16 +448,10 @@ def prepare_environment():
             print(f"Failed to install audioop-lts: {e}")
 
     assets_repo = os.environ.get('ASSETS_REPO', "https://github.com/AUTOMATIC1111/stable-diffusion-webui-assets.git")
-    # stable_diffusion_repo = os.environ.get('STABLE_DIFFUSION_REPO', "https://github.com/Stability-AI/stablediffusion.git")
-    # stable_diffusion_xl_repo = os.environ.get('STABLE_DIFFUSION_XL_REPO', "https://github.com/Stability-AI/generative-models.git")
-    # k_diffusion_repo = os.environ.get('K_DIFFUSION_REPO', 'https://github.com/crowsonkb/k-diffusion.git')
     huggingface_guess_repo = os.environ.get('HUGGINGFACE_GUESS_REPO', 'https://github.com/lllyasviel/huggingface_guess.git')
     blip_repo = os.environ.get('BLIP_REPO', 'https://github.com/salesforce/BLIP.git')
 
     assets_commit_hash = os.environ.get('ASSETS_COMMIT_HASH', "6f7db241d2f8ba7457bac5ca9753331f0c266917")
-    # stable_diffusion_commit_hash = os.environ.get('STABLE_DIFFUSION_COMMIT_HASH', "cf1d67a6fd5ea1aa600c4df58e5b47da45f6bdbf")
-    # stable_diffusion_xl_commit_hash = os.environ.get('STABLE_DIFFUSION_XL_COMMIT_HASH', "45c443b316737a4ab6e40413d7794a7f5657c19f")
-    # k_diffusion_commit_hash = os.environ.get('K_DIFFUSION_COMMIT_HASH', "ab527a9a6d347f364e3d185ba6d714e22d80cb3c")
     huggingface_guess_commit_hash = os.environ.get('HUGGINGFACE_GUESS_HASH', "84826248b49bb7ca754c73293299c4d4e23a548d")
     blip_commit_hash = os.environ.get('BLIP_COMMIT_HASH', "48211a1594f1321b00f14c9f7a5b4813144b2fb9")
 
@@ -475,19 +485,32 @@ def prepare_environment():
             run(f'"{python}" -m pip install uv', "Installing uv", "Couldn't install uv")
             print("uv installed successfully")
 
+    # Install PyTorch FIRST with version locking and --no-deps to prevent upgrades
     if args.reinstall_torch or not is_installed("torch") or not is_installed("torchvision"):
+        # Default to cu128 versions, but allow environment override
+        torch_version = os.environ.get('TORCH_VERSION', '2.7.1+cu128')
+        torchvision_version = os.environ.get('TORCHVISION_VERSION', '0.22.1+cu128')
+        
         # Use uv for torch installation if requested
         if args.use_uv:
             try:
                 subprocess.run(["uv", "--version"], check=True, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
-                run(f'uv pip install {torch_command.split(" ", 1)[1]} --python "{python}"', "Installing torch and torchvision", "Couldn't install torch", live=True)
+                run(f'uv pip install torch=={torch_version} torchvision=={torchvision_version} --index-url {torch_index_url} --no-deps --python "{python}"', "Installing torch and torchvision (locked version)", "Couldn't install torch", live=True)
             except (subprocess.CalledProcessError, FileNotFoundError):
                 # Fallback to pip if uv is not available
                 print("uv is not available, falling back to pip for torch installation")
-                run(f'"{python}" -m {torch_command}', "Installing torch and torchvision", "Couldn't install torch", live=True)
+                run(f'"{python}" -m pip install torch=={torch_version} torchvision=={torchvision_version} --index-url {torch_index_url} --no-deps', "Installing torch and torchvision (locked version)", "Couldn't install torch", live=True)
         else:
-            run(f'"{python}" -m {torch_command}', "Installing torch and torchvision", "Couldn't install torch", live=True)
-        startup_timer.record("install torch")
+            run(f'"{python}" -m pip install torch=={torch_version} torchvision=={torchvision_version} --index-url {torch_index_url} --no-deps', "Installing torch and torchvision (locked version)", "Couldn't install torch", live=True)
+
+        # Install missing PyTorch dependencies
+        required_deps = ['filelock', 'fsspec', 'jinja2', 'networkx', 'sympy', 'typing-extensions']
+        for dep in required_deps:
+            if not is_installed(dep):
+                print(f"Installing missing PyTorch dependency: {dep}")
+                run_pip(f"install {dep}", f"PyTorch dependency: {dep}")
+
+    startup_timer.record("install torch")
 
     if args.use_ipex:
         args.skip_torch_cuda_test = True
@@ -495,8 +518,6 @@ def prepare_environment():
         raise RuntimeError(
             'Your device does not support the current version of Torch/CUDA! Consider download another version: \n'
             'https://github.com/lllyasviel/stable-diffusion-webui-forge/releases/tag/latest'
-            # 'Torch is not able to use GPU; '
-            # 'add --skip-torch-cuda-test to COMMANDLINE_ARGS variable to disable this check'
         )
     startup_timer.record("torch GPU test")
 
@@ -559,9 +580,6 @@ def prepare_environment():
     os.makedirs(os.path.join(script_path, dir_repos), exist_ok=True)
 
     git_clone(assets_repo, repo_dir('stable-diffusion-webui-assets'), "assets", assets_commit_hash)
-    # git_clone(stable_diffusion_repo, repo_dir('stable-diffusion-stability-ai'), "Stable Diffusion", stable_diffusion_commit_hash)
-    # git_clone(stable_diffusion_xl_repo, repo_dir('generative-models'), "Stable Diffusion XL", stable_diffusion_xl_commit_hash)
-    # git_clone(k_diffusion_repo, repo_dir('k-diffusion'), "K-diffusion", k_diffusion_commit_hash)
     git_clone(huggingface_guess_repo, repo_dir('huggingface_guess'), "huggingface_guess", huggingface_guess_commit_hash)
     git_clone(blip_repo, repo_dir('BLIP'), "BLIP", blip_commit_hash)
 
@@ -570,18 +588,20 @@ def prepare_environment():
     if not os.path.isfile(requirements_file):
         requirements_file = os.path.join(script_path, requirements_file)
 
+    # Install requirements with conservative upgrade strategy (NOT --no-deps to avoid breaking extensions)
     if not requirements_met(requirements_file):
         # Use uv for requirements installation if requested
         if args.use_uv:
             try:
                 subprocess.run(["uv", "--version"], check=True, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
+                # UV doesn't support --upgrade-strategy, use regular install instead
                 run(f'uv pip install -r "{requirements_file}" --python "{python}"', "requirements")
             except (subprocess.CalledProcessError, FileNotFoundError):
                 # Fallback to pip if uv is not available
                 print("uv is not available, falling back to pip for requirements installation")
-                run_pip(f"install -r \"{requirements_file}\"", "requirements")
+                run_pip(f"install -r \"{requirements_file}\" --upgrade-strategy only-if-needed", "requirements")
         else:
-            run_pip(f"install -r \"{requirements_file}\"", "requirements")
+            run_pip(f"install -r \"{requirements_file}\" --upgrade-strategy only-if-needed", "requirements")
         startup_timer.record("install requirements")
 
     if not os.path.isfile(requirements_file_for_npu):
@@ -592,13 +612,14 @@ def prepare_environment():
         if args.use_uv:
             try:
                 subprocess.run(["uv", "--version"], check=True, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
+                # UV doesn't support --upgrade-strategy, use regular install instead
                 run(f'uv pip install -r "{requirements_file_for_npu}" --python "{python}"', "requirements_for_npu")
             except (subprocess.CalledProcessError, FileNotFoundError):
                 # Fallback to pip if uv is not available
                 print("uv is not available, falling back to pip for NPU requirements installation")
-                run_pip(f"install -r \"{requirements_file_for_npu}\"", "requirements_for_npu")
+                run_pip(f"install -r \"{requirements_file_for_npu}\" --upgrade-strategy only-if-needed", "requirements_for_npu")
         else:
-            run_pip(f"install -r \"{requirements_file_for_npu}\"", "requirements_for_npu")
+            run_pip(f"install -r \"{requirements_file_for_npu}\" --upgrade-strategy only-if-needed", "requirements_for_npu")
         startup_timer.record("install requirements_for_npu")
 
     if not args.skip_install:

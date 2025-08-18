@@ -1028,16 +1028,30 @@ def create_ui():
 def versions_html():
     import torch
     import launch
+    import pkg_resources
 
     python_version = ".".join([str(x) for x in sys.version_info[0:3]])
     commit = launch.commit_hash()
     tag = launch.git_tag()
 
-    if shared.xformers_available:
+    attention_name = "xformers"
+    attention_version = "N/A"
+
+    if shared.cmd_opts.use_sage_attention3:
+        attention_name = "sageattention3"
+        try:
+            attention_version = pkg_resources.get_distribution("sageattention").version
+        except pkg_resources.DistributionNotFound:
+            attention_version = "N/A"
+    elif shared.cmd_opts.use_sage_attention:
+        attention_name = "sageattention"
+        try:
+            attention_version = pkg_resources.get_distribution("sageattention").version
+        except pkg_resources.DistributionNotFound:
+            attention_version = "N/A"
+    elif shared.xformers_available:
         import xformers
-        xformers_version = xformers.__version__
-    else:
-        xformers_version = "N/A"
+        attention_version = xformers.__version__
 
     return f"""
 version: <a href="https://github.com/lllyasviel/stable-diffusion-webui-forge/commit/{commit}">{tag}</a>
@@ -1046,12 +1060,13 @@ python: <span title="{sys.version}">{python_version}</span>
 &#x2000;•&#x2000;
 torch: {getattr(torch, '__long_version__',torch.__version__)}
 &#x2000;•&#x2000;
-xformers: {xformers_version}
+{attention_name}: {attention_version}
 &#x2000;•&#x2000;
 gradio: {gr.__version__}
 &#x2000;•&#x2000;
 checkpoint: <a id="sd_checkpoint_hash">N/A</a>
 """
+
 
 
 def setup_ui_api(app):

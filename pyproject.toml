@@ -1,3 +1,7 @@
+[project]
+name = "stable-diffusion-webui-reforge"
+version = "2.0.1"
+
 [tool.ruff]
 
 target-version = "py39"
