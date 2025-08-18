@@ -205,34 +205,52 @@ else
     cd "${clone_dir}"/ || { printf "\e[1m\e[31mERROR: Can't cd to %s/%s/, aborting...\e[0m" "${install_dir}" "${clone_dir}"; exit 1; }
 fi
 
-if [[ $use_venv -eq 1 ]] && [[ -z "${VIRTUAL_ENV}" ]];
+if [[ $use_venv -eq 1 ]] && [[ -z \"${VIRTUAL_ENV}\" ]];
 then
-    printf "\n%s\n" "${delimiter}"
-    printf "Create and activate python venv"
-    printf "\n%s\n" "${delimiter}"
-    cd "${install_dir}"/"${clone_dir}"/ || { printf "\e[1m\e[31mERROR: Can't cd to %s/%s/, aborting...\e[0m" "${install_dir}" "${clone_dir}"; exit 1; }
-    if [[ ! -d "${venv_dir}" ]]
+    printf \"\n%s\n\" \"${delimiter}\"
+    printf \"Create and activate python venv\"
+    printf \"\n%s\n\" \"${delimiter}\"
+    cd \"${install_dir}\"/\"${clone_dir}\"/ || { printf \"\e[1m\e[31mERROR: Can't cd to %s/%s/, aborting...\e[0m\" \"${install_dir}\" \"${clone_dir}\"; exit 1; }
+    
+    # Check if --use-uv flag is provided
+    use_uv_flag=0
+    for arg in \"$@\"; do
+        if [[ \"$arg\" == \"--use-uv\" ]]; then
+            use_uv_flag=1
+            break
+        fi
+    done
+    
+    if [[ ! -d \"${venv_dir}\" ]]
     then
-        "${python_cmd}" -m venv "${venv_dir}"
-        "${venv_dir}"/bin/python -m pip install --upgrade pip
+        if [[ $use_uv_flag -eq 1 ]] && command -v uv &> /dev/null; then
+            printf \"\n%s\n\" \"${delimiter}\"
+            printf \"Creating venv with uv\"
+            printf \"\n%s\n\" \"${delimiter}\"
+            uv venv \"${venv_dir}\" --python \"${python_cmd}\"
+            \"${venv_dir}\"/bin/python -m pip install --upgrade pip
+        else
+            \"${python_cmd}\" -m venv \"${venv_dir}\"
+            \"${venv_dir}\"/bin/python -m pip install --upgrade pip
+        fi
         first_launch=1
     fi
     # shellcheck source=/dev/null
-    if [[ -f "${venv_dir}"/bin/activate ]]
+    if [[ -f \"${venv_dir}\"/bin/activate ]]
     then
-        source "${venv_dir}"/bin/activate
+        source \"${venv_dir}\"/bin/activate
         # ensure use of python from venv
-        python_cmd="${venv_dir}"/bin/python
+        python_cmd=\"${venv_dir}\"/bin/python
     else
-        printf "\n%s\n" "${delimiter}"
-        printf "\e[1m\e[31mERROR: Cannot activate python venv, aborting...\e[0m"
-        printf "\n%s\n" "${delimiter}"
+        printf \"\n%s\n\" \"${delimiter}\"
+        printf \"\e[1m\e[31mERROR: Cannot activate python venv, aborting...\e[0m\"
+        printf \"\n%s\n\" \"${delimiter}\"
         exit 1
     fi
 else
-    printf "\n%s\n" "${delimiter}"
-    printf "python venv already activate or run without venv: ${VIRTUAL_ENV}"
-    printf "\n%s\n" "${delimiter}"
+    printf \"\n%s\n\" \"${delimiter}\"
+    printf \"python venv already activate or run without venv: ${VIRTUAL_ENV}\"
+    printf \"\n%s\n\" \"${delimiter}\"
 fi
 
 # Try using TCMalloc on Linux

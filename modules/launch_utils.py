@@ -150,6 +150,17 @@ def run_pip(command, desc=None, live=default_command_live):
         return
 
     index_url_line = f' --index-url {index_url}' if index_url != '' else ''
+    
+    # Use uv if requested and available
+    if args.use_uv:
+        # Check if uv is available
+        try:
+            subprocess.run(["uv", "--version"], check=True, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
+            return run(f'uv pip install {command} --python "{python}"{index_url_line}', desc=f"Installing {desc}", errdesc=f"Couldn't install {desc}", live=live)
+        except (subprocess.CalledProcessError, FileNotFoundError):
+            # Fallback to pip if uv is not available
+            print("uv is not available, falling back to pip")
+    
     return run(f'"{python}" -m pip {command} --prefer-binary{index_url_line}', desc=f"Installing {desc}", errdesc=f"Couldn't install {desc}", live=live)
 
 
@@ -243,7 +254,20 @@ def run_extension_installer(extension_dir):
         env = os.environ.copy()
         env['PYTHONPATH'] = f"{script_path}{os.pathsep}{env.get('PYTHONPATH', '')}"
 
-        stdout = run(f'"{python}" "{path_installer}"', errdesc=f"Error running install.py for extension {extension_dir}", custom_env=env).strip()
+        # Use uv for extension installer if requested
+        if args.use_uv:
+            try:
+                subprocess.run(["uv", "--version"], check=True, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
+                # Extract the command from the original run call and adapt it for uv
+                path_installer_quoted = f'"{path_installer}"' if ' ' in path_installer else path_installer
+                stdout = run(f'uv run --python "{python}" "{python}" {path_installer_quoted}', errdesc=f"Error running install.py for extension {extension_dir}", custom_env=env).strip()
+            except (subprocess.CalledProcessError, FileNotFoundError):
+                # Fallback to pip if uv is not available
+                print("uv is not available, falling back to pip for extension installation")
+                stdout = run(f'"{python}" "{path_installer}"', errdesc=f"Error running install.py for extension {extension_dir}", custom_env=env).strip()
+        else:
+            stdout = run(f'"{python}" "{path_installer}"', errdesc=f"Error running install.py for extension {extension_dir}", custom_env=env).strip()
+            
         if stdout:
             print(stdout)
     except Exception as e:
@@ -393,7 +417,17 @@ def prepare_environment():
     if sys.version_info.major == 3 and sys.version_info.minor == 13: #for some reason python 3.13 needs this library
         try:
             if not is_installed("audioop-lts"):
-                run_pip("install audioop-lts", "audioop-lts")
+                # Use uv for audioop-lts installation if requested
+                if args.use_uv:
+                    try:
+                        subprocess.run(["uv", "--version"], check=True, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
+                        run(f'uv pip install audioop-lts --python "{python}"', "audioop-lts")
+                    except (subprocess.CalledProcessError, FileNotFoundError):
+                        # Fallback to pip if uv is not available
+                        print("uv is not available, falling back to pip for audioop-lts installation")
+                        run_pip("install audioop-lts", "audioop-lts")
+                else:
+                    run_pip("install audioop-lts", "audioop-lts")
         except Exception as e:
             print(f"Failed to install audioop-lts: {e}")
 
@@ -430,9 +464,29 @@ def prepare_environment():
     print(f"Python {sys.version}")
     print(f"Version: {tag}")
     print(f"Commit hash: {commit}")
+    
+    # Install uv if requested
+    if args.use_uv:
+        try:
+            subprocess.run(["uv", "--version"], check=True, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
+            print("Using uv for package management")
+        except (subprocess.CalledProcessError, FileNotFoundError):
+            print("Installing uv...")
+            run(f'"{python}" -m pip install uv', "Installing uv", "Couldn't install uv")
+            print("uv installed successfully")
 
     if args.reinstall_torch or not is_installed("torch") or not is_installed("torchvision"):
-        run(f'"{python}" -m {torch_command}', "Installing torch and torchvision", "Couldn't install torch", live=True)
+        # Use uv for torch installation if requested
+        if args.use_uv:
+            try:
+                subprocess.run(["uv", "--version"], check=True, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
+                run(f'uv pip install {torch_command.split(" ", 1)[1]} --python "{python}"', "Installing torch and torchvision", "Couldn't install torch", live=True)
+            except (subprocess.CalledProcessError, FileNotFoundError):
+                # Fallback to pip if uv is not available
+                print("uv is not available, falling back to pip for torch installation")
+                run(f'"{python}" -m {torch_command}', "Installing torch and torchvision", "Couldn't install torch", live=True)
+        else:
+            run(f'"{python}" -m {torch_command}', "Installing torch and torchvision", "Couldn't install torch", live=True)
         startup_timer.record("install torch")
 
     if args.use_ipex:
@@ -447,19 +501,59 @@ def prepare_environment():
     startup_timer.record("torch GPU test")
 
     if not is_installed("clip"):
-        run_pip(f"install {clip_package}", "clip")
+        # Use uv for clip installation if requested
+        if args.use_uv:
+            try:
+                subprocess.run(["uv", "--version"], check=True, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
+                run(f'uv pip install {clip_package} --python "{python}"', "clip")
+            except (subprocess.CalledProcessError, FileNotFoundError):
+                # Fallback to pip if uv is not available
+                print("uv is not available, falling back to pip for clip installation")
+                run_pip(f"install {clip_package}", "clip")
+        else:
+            run_pip(f"install {clip_package}", "clip")
         startup_timer.record("install clip")
 
     if not is_installed("open_clip"):
-        run_pip(f"install {openclip_package}", "open_clip")
+        # Use uv for open_clip installation if requested
+        if args.use_uv:
+            try:
+                subprocess.run(["uv", "--version"], check=True, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
+                run(f'uv pip install {openclip_package} --python "{python}"', "open_clip")
+            except (subprocess.CalledProcessError, FileNotFoundError):
+                # Fallback to pip if uv is not available
+                print("uv is not available, falling back to pip for open_clip installation")
+                run_pip(f"install {openclip_package}", "open_clip")
+        else:
+            run_pip(f"install {openclip_package}", "open_clip")
         startup_timer.record("install open_clip")
 
     if (not is_installed("xformers") or args.reinstall_xformers) and args.xformers:
-        run_pip(f"install -U -I --no-deps {xformers_package}", "xformers")
+        # Use uv for xformers installation if requested
+        if args.use_uv:
+            try:
+                subprocess.run(["uv", "--version"], check=True, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
+                run(f'uv pip install -U -I --no-deps {xformers_package} --python "{python}"', "xformers")
+            except (subprocess.CalledProcessError, FileNotFoundError):
+                # Fallback to pip if uv is not available
+                print("uv is not available, falling back to pip for xformers installation")
+                run_pip(f"install -U -I --no-deps {xformers_package}", "xformers")
+        else:
+            run_pip(f"install -U -I --no-deps {xformers_package}", "xformers")
         startup_timer.record("install xformers")
 
     if not is_installed("ngrok") and args.ngrok:
-        run_pip("install ngrok", "ngrok")
+        # Use uv for ngrok installation if requested
+        if args.use_uv:
+            try:
+                subprocess.run(["uv", "--version"], check=True, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
+                run(f'uv pip install ngrok --python "{python}"', "ngrok")
+            except (subprocess.CalledProcessError, FileNotFoundError):
+                # Fallback to pip if uv is not available
+                print("uv is not available, falling back to pip for ngrok installation")
+                run_pip("install ngrok", "ngrok")
+        else:
+            run_pip("install ngrok", "ngrok")
         startup_timer.record("install ngrok")
 
     os.makedirs(os.path.join(script_path, dir_repos), exist_ok=True)
@@ -477,14 +571,34 @@ def prepare_environment():
         requirements_file = os.path.join(script_path, requirements_file)
 
     if not requirements_met(requirements_file):
-        run_pip(f"install -r \"{requirements_file}\"", "requirements")
+        # Use uv for requirements installation if requested
+        if args.use_uv:
+            try:
+                subprocess.run(["uv", "--version"], check=True, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
+                run(f'uv pip install -r "{requirements_file}" --python "{python}"', "requirements")
+            except (subprocess.CalledProcessError, FileNotFoundError):
+                # Fallback to pip if uv is not available
+                print("uv is not available, falling back to pip for requirements installation")
+                run_pip(f"install -r \"{requirements_file}\"", "requirements")
+        else:
+            run_pip(f"install -r \"{requirements_file}\"", "requirements")
         startup_timer.record("install requirements")
 
     if not os.path.isfile(requirements_file_for_npu):
         requirements_file_for_npu = os.path.join(script_path, requirements_file_for_npu)
 
     if "torch_npu" in torch_command and not requirements_met(requirements_file_for_npu):
-        run_pip(f"install -r \"{requirements_file_for_npu}\"", "requirements_for_npu")
+        # Use uv for NPU requirements installation if requested
+        if args.use_uv:
+            try:
+                subprocess.run(["uv", "--version"], check=True, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
+                run(f'uv pip install -r "{requirements_file_for_npu}" --python "{python}"', "requirements_for_npu")
+            except (subprocess.CalledProcessError, FileNotFoundError):
+                # Fallback to pip if uv is not available
+                print("uv is not available, falling back to pip for NPU requirements installation")
+                run_pip(f"install -r \"{requirements_file_for_npu}\"", "requirements_for_npu")
+        else:
+            run_pip(f"install -r \"{requirements_file_for_npu}\"", "requirements_for_npu")
         startup_timer.record("install requirements_for_npu")
 
     if not args.skip_install:

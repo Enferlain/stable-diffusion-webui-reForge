@@ -35,6 +35,23 @@ dir "%VENV_DIR%\Scripts\Python.exe" >tmp/stdout.txt 2>tmp/stderr.txt
 if %ERRORLEVEL% == 0 goto :activate_venv
 
 for /f "delims=" %%i in ('CALL %PYTHON% -c "import sys; print(sys.executable)"') do set PYTHON_FULLNAME="%%i"
+
+:: Check if --use-uv flag is provided
+echo %* | findstr /C:"--use-uv" >nul
+if %ERRORLEVEL% == 0 (
+    :: Try to use uv for venv creation if available
+    echo Checking for uv...
+    uv --version >nul 2>nul
+    if %ERRORLEVEL% == 0 (
+        echo Creating venv with uv in directory %VENV_DIR%
+        uv venv "%VENV_DIR%" --python %PYTHON_FULLNAME% >tmp/stdout.txt 2>tmp/stderr.txt
+        if %ERRORLEVEL% == 0 goto :activate_venv
+        echo Failed to create venv with uv, falling back to standard venv
+    ) else (
+        echo uv not found, falling back to standard venv
+    )
+)
+
 echo Creating venv in directory %VENV_DIR% using python %PYTHON_FULLNAME%
 %PYTHON_FULLNAME% -m venv "%VENV_DIR%" >tmp/stdout.txt 2>tmp/stderr.txt
 if %ERRORLEVEL% == 0 goto :upgrade_pip
@@ -68,7 +85,7 @@ exit /b
 
 :accelerate_launch
 echo Accelerating
-%ACCELERATE% launch --num_cpu_threads_per_process=6 launch.py
+%ACCELERATE% launch --num_cpu_threads_per_process=6 launch.py %*
 if EXIST tmp/restart goto :skip_venv
 pause
 exit /b

@@ -3,16 +3,19 @@
 set PYTHON=
 set GIT=
 set VENV_DIR=
-set COMMANDLINE_ARGS=
 
-@REM Uncomment following code to reference an existing A1111 checkout.
-@REM set A1111_HOME=Your A1111 checkout dir
-@REM
-@REM set VENV_DIR=%A1111_HOME%/venv
-@REM set COMMANDLINE_ARGS=%COMMANDLINE_ARGS% ^
-@REM  --ckpt-dir %A1111_HOME%/models/Stable-diffusion ^
-@REM  --hypernetwork-dir %A1111_HOME%/models/hypernetworks ^
-@REM  --embeddings-dir %A1111_HOME%/embeddings ^
-@REM  --lora-dir %A1111_HOME%/models/Lora
+@REM ##################################################################
+@REM ##                  COMMANDLINE ARGUMENTS                       ##
+@REM ##################################################################
+
+set COMMANDLINE_ARGS=--api --theme dark --cuda-malloc --cuda-stream --use-uv
+
+@REM Choose ONE of the following attention optimizations.
+@REM SAGE is newer, xformers is the classic choice.
+set COMMANDLINE_ARGS=%COMMANDLINE_ARGS% --use-sage-attention
+@REM set COMMANDLINE_ARGS=%COMMANDLINE_ARGS% --xformers
+
+
+echo COMMANDLINE_ARGS is %COMMANDLINE_ARGS%
 
 call webui.bat
