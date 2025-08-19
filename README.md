@@ -55,14 +55,19 @@ Other branches:
 
 This repository now supports [uv](https://github.com/astral-sh/uv) for significantly faster package installation and virtual environment creation.
 
-To use uv instead of pip, simply add the `--use-uv` flag when launching:
+To use uv instead of pip, you can add the `--use-uv` flag to your `webui-user.bat` file.
+
+Open `webui-user.bat` and add `--use-uv` to the `COMMANDLINE_ARGS` variable, for example:
+
+```bat
+set COMMANDLINE_ARGS=--use-uv --api --theme dark
+```
+
+Alternatively, you can launch `webui.bat` with the flag:
 
 ```bash
 # On Windows
 webui.bat --use-uv
-
-# On Linux/macOS
-./webui.sh --use-uv
 ```
 
 Benefits:
