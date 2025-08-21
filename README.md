@@ -77,3 +77,7 @@ Benefits:
 - No configuration required
 
 See [docs/uv_support.md](docs/uv_support.md) for more details.
+
+---
+
+[![Ask DeepWiki](https://deepwiki.com/badge.svg)](https://deepwiki.com/Panchovix/stable-diffusion-webui-reForge)
