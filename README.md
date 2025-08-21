@@ -80,4 +80,4 @@ See [docs/uv_support.md](docs/uv_support.md) for more details.
 
 ---
 
-[![Ask DeepWiki](https://deepwiki.com/badge.svg)](https://github.com/Enferlain/stable-diffusion-webui-reForge/)
+[![Ask DeepWiki](https://deepwiki.com/badge.svg)](https://deepwiki.com/Enferlain/stable-diffusion-webui-reForge)
