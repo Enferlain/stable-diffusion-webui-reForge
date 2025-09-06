@@ -4,7 +4,7 @@ import gradio as gr
 from modules import localization, ui_components, shared_items, shared, interrogate, shared_gradio_themes, util, sd_emphasis
 from modules.paths_internal import models_path, script_path, data_path, sd_configs_path, sd_default_config, sd_model_file, default_sd_model_file, extensions_dir, extensions_builtin_dir, default_output_dir  # noqa: F401
 from modules.shared_cmd_options import cmd_opts
-from modules.options import options_section, OptionInfo, OptionHTML, categories
+from modules.options import options_section, OptionInfo, OptionHTML, categories, OptionDiv
 from modules_forge import shared_options as forge_shared_options
 from k_diffusion.sampling import ALL_SOLVERS
 
@@ -248,8 +248,10 @@ options_templates.update(options_section(('img2img', "img2img", "sd"), {
     "img2img_inpaint_mask_scribble_alpha": OptionInfo(75, "Inpaint mask alpha (transparency)", gr.Slider, {"minimum": 0, "maximum": 100, "step": 1}).info("only affects non-high-contrast brush").needs_reload_ui(),
     "return_mask": OptionInfo(False, "For inpainting, include the greyscale mask in results for web"),
     "return_mask_composite": OptionInfo(False, "For inpainting, include masked composite in results for web"),
-    "img2img_batch_show_results_limit": OptionInfo(32, "Show the first N batch img2img results in UI", gr.Slider, {"minimum": -1, "maximum": 1000, "step": 1}).info('0: disable, -1: show all images. Too many images can cause lag'),
     "overlay_inpaint": OptionInfo(True, "Overlay original for inpaint").info("when inpainting, overlay the original image over the areas that weren't inpainted."),
+    "img2img_batch_show_results_limit": OptionInfo(32, "Show the first N batch img2img results in UI", gr.Slider, {"minimum": -1, "maximum": 256, "step": 1}).info("0 = disable; -1 = show all; too many images causes severe lag"),
+    "div_exp": OptionDiv(),
+    "img2img_inpaint_precise_mask": OptionInfo(False, 'For inpainting, process the "Mask blur" in fp32 instead of uint8 precision; improve blending result').info('<b>Experimental</b> ; may break functions that access the "overlay_images"'),
     "img2img_autosize": OptionInfo(False, "After loading into Img2img, automatically update Width and Height"),
     "img2img_batch_use_original_name": OptionInfo(False, "Save using original filename in img2img batch. Applies to 'Upload' and 'From directory' tabs.").info("Warning: overwriting is possible, based on Settings > Saving images/grids > Saving the image to an existing file.")
 }))

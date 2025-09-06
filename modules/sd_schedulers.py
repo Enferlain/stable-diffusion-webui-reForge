@@ -188,6 +188,85 @@ def beta_scheduler(n, sigma_min, sigma_max, inner_model, device):
     sigs += [0.0]
     return torch.FloatTensor(sigs).to(device)
 
+def beta_scheduler_v2c(n, sigma_min, sigma_max, inner_model, device):
+    """
+    Improved Beta scheduler, based on "Beta Sampling is All You Need" [arXiv:2407.12173] (Lee et. al, 2024)
+    Uses stratified sampling and honors sigma_min/sigma_max bounds
+    """
+    alpha = shared.opts.beta_dist_alpha
+    beta = shared.opts.beta_dist_beta
+    
+    # Get base sigma schedule from inner model
+    base_sigmas = inner_model.get_sigmas(n + 1)
+    total_timesteps = len(base_sigmas) - 1
+    
+    # Use stratified quantiles to avoid duplicates (like align_your_steps approach)
+    quantiles = (np.arange(n) + 0.5) / n  # Mid-point sampling
+    quantiles = np.clip(quantiles, 1e-6, 1 - 1e-6)  # Avoid endpoints
+    
+    # Beta inverse CDF transform
+    beta_values = stats.beta.ppf(quantiles, alpha, beta)
+    beta_indices = beta_values * (total_timesteps - 1)
+    
+    # Linear interpolation instead of rounding (preserves exact step count)
+    result_sigmas = []
+    for idx in beta_indices:
+        i0 = int(np.floor(idx))
+        i1 = min(i0 + 1, total_timesteps)
+        weight = idx - i0
+        
+        sigma = float(base_sigmas[i0] * (1 - weight) + base_sigmas[i1] * weight)
+        result_sigmas.append(sigma)
+    
+    # Honor sigma bounds (like other schedulers in your collection)
+    if sigma_min < sigma_max:
+        result_sigmas = [np.clip(s, sigma_min, sigma_max) for s in result_sigmas]
+    
+    # Ensure monotonic decrease (common pattern in your schedulers)
+    for i in range(1, len(result_sigmas)):
+        result_sigmas[i] = min(result_sigmas[i], result_sigmas[i-1])
+    
+    # Final sigma
+    result_sigmas.append(0.0)
+    
+    return torch.FloatTensor(result_sigmas).to(device)
+
+def beta_scheduler_v2c_old(n, sigma_min, sigma_max, inner_model, device):
+    """
+    Beta scheduler, based on "Beta Sampling is All You Need" [arXiv:2407.12173] (Lee et. al, 2024)
+    """
+    alpha = shared.opts.beta_dist_alpha
+    beta = shared.opts.beta_dist_beta
+    
+    # Retrieve the sigmas from the inner model
+    sigmas = inner_model.get_sigmas(n + 1)
+
+    # Total timesteps based on the length of the sigma schedule
+    total_timesteps = len(sigmas) - 1
+
+    # Generate beta-distributed timesteps
+    linspace = np.linspace(0, 1, n, endpoint=False)
+    beta_timesteps = stats.beta.ppf(linspace, alpha, beta) * total_timesteps
+
+    # Map beta timesteps to integer indices and retrieve sigmas
+    beta_indices = np.rint(beta_timesteps).astype(int)
+    beta_indices = np.clip(beta_indices, 0, total_timesteps - 1)  # Ensure valid indices
+
+    result_sigmas = []
+    last_t = -1
+    for t in beta_indices:
+        if t != last_t:
+            # Fetch sigmas using the get_sigmas function
+            result_sigmas += [float(sigmas[int(t)])]
+        last_t = t
+
+    # Append the final sigma (0.0)
+    result_sigmas += [0.0]
+    
+    print(f"Result Sigmas: {result_sigmas}") # Added print statement
+
+    return torch.FloatTensor(result_sigmas).to(device)
+
 def turbo_scheduler(n, sigma_min, sigma_max, inner_model, device):
     unet = inner_model.inner_model.forge_objects.unet
     timesteps = torch.flip(torch.arange(1, n + 1) * float(1000.0 / n) - 1, (0,)).round().long().clip(0, 999)
@@ -344,6 +423,8 @@ schedulers = [
     Scheduler('align_your_steps', 'Align Your Steps', get_align_your_steps_sigmas),
     Scheduler('align_your_steps_custom', 'Align Your Steps Custom', get_sigmas_ays_custom),
     Scheduler('beta', 'Beta', beta_scheduler, need_inner_model=True),
+    Scheduler('beta_v2c', 'Beta v2c', beta_scheduler_v2c, need_inner_model=True),
+    Scheduler('beta_v2c_old', 'Beta v2c old', beta_scheduler_v2c_old, need_inner_model=True),
     Scheduler('turbo', 'Turbo', turbo_scheduler, need_inner_model=True),
     Scheduler('cosine', 'Cosine', cosine_scheduler),
     Scheduler('cosine-exponential blend', 'Cosine-exponential Blend', cosexpblend_scheduler),
